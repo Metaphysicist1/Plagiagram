@@ -77,7 +77,23 @@ class CodeRAG:
             text = chunk["text"]
             context.append(f"File: {source}\n{text}")
         
-        # Generate response using LLM with context
+        # For plagiarism detection, use a specific prompt format
+        if "plagiarism" in user_query.lower():
+            prompt = f"""
+            You are a plagiarism detection expert. Analyze the following code snippet:
+            
+            USER CODE:
+            {user_query}
+            
+            POTENTIAL MATCHES FROM DATABASE:
+            {'\n\n'.join(context)}
+            
+            Based on your analysis, is the user code plagiarized from any of the potential matches?
+            Important: You must respond with ONLY one word - either "yes" (if plagiarized) or "no" (if not plagiarized).
+            """
+            return self.llm.generate_response(prompt, [])  # Empty context since we included it in the prompt
+        
+        # For regular queries, use the standard approach
         response = self.llm.generate_response(user_query, context)
         
         return response
@@ -102,25 +118,15 @@ class CodeRAG:
 
 # Example usage
 if __name__ == "__main__":
-    # Initialize RAG system
-    rag = CodeRAG()
-    
-    # Either index a new codebase
-    # rag.index_codebase("./my_project")
-    
-    # Or check existing index
-    if rag.check_index():
-        print("Using existing code index")
-        rag.inspect_database()
-    else:
-        print("No index found. Please index your codebase first.")
-    
-    # Query the system
-    response = rag.query('''
-                        class Operation():
-                            def __init__(self,x):
-                                return x+=x
-                         
-                         ''')
-    print("\nQuery Response:")
+    # Initialize the RAG system
+    rag = CodeRAG()  # Make sure you have your API key set as GEMINI_API env variable or pass it directly
+
+    # Index your codebase - replace "./my_project" with the path to your actual code directory
+    rag.index_codebase(
+        directory_path="./repo_fetching/Repositories_path",  
+        file_extensions=['.py', '.js', '.java']  # Add any file extensions you want to index
+    )
+
+    # Now you can make queries
+    response = rag.query("Your question about the code here")
     print(response)

@@ -133,3 +133,9 @@ class CodeEmbeddingStore:
             "model": self.model_name,
             "persist_directory": self.persist_directory
         }
+
+from chromadb import Client
+client = Client()
+collection = client.get_collection("your_collection_name")
+documents = collection.get()
+print(documents)

@@ -40,13 +40,13 @@ def filter_files(
     return filtered_files
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
-    files = filter_files(
-        root_dir="./repo_fetching/Repositories_path/",
-        extensions=['.py', '.sh','.js'],
-        exclude_dirs=['.git', '__pycache__', 'tests']
-        )
+    # files = filter_files(
+    #     root_dir="./repo_fetching/Repositories_path/",
+    #     extensions=['.py', '.sh','.js'],
+    #     exclude_dirs=['.git', '__pycache__', 'tests']
+    #     )
     
-    for file in files:
-        print(file)
+    # for file in files:
+    #     print(file)
