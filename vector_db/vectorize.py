@@ -1,12 +1,11 @@
 import os
 import glob
-import pinecone
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from google.generativeai import GenerativeModel, embed_content
 import time
-import socket
+from pinecone import Pinecone  # Updated import
 
 # Load environment variables
 load_dotenv()
@@ -18,7 +17,6 @@ logger = logging.getLogger(__name__)
 # Configuration
 REPOS_STORAGE_PATH = "/data/repositories"
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BATCH_SIZE = 100
@@ -45,21 +43,27 @@ def initialize_pinecone():
     
     for attempt in range(max_retries):
         try:
-            # Try to resolve Pinecone hostname first
-            socket.gethostbyname('controller.us-east-1.pinecone.io')
+            # Initialize Pinecone with the new API
+            pc = Pinecone(api_key=PINECONE_API_KEY)
             
-            pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+            # Check if index exists
+            indexes = pc.list_indexes()
+            index_exists = PINECONE_INDEX_NAME in [index.name for index in indexes.indexes]
             
-            # Check if index exists, create if it doesn't
-            if PINECONE_INDEX_NAME not in pinecone.list_indexes():
-                pinecone.create_index(
+            # Create index if it doesn't exist
+            if not index_exists:
+                pc.create_index(
                     name=PINECONE_INDEX_NAME,
                     dimension=768,  # Dimension for Gemini embeddings
                     metric="cosine"
                 )
                 logger.info(f"Created new Pinecone index: {PINECONE_INDEX_NAME}")
             
-            return pinecone.Index(PINECONE_INDEX_NAME)
+            # Get the index
+            index = pc.Index(PINECONE_INDEX_NAME)
+            logger.info("Successfully connected to Pinecone")
+            return index
+            
         except Exception as e:
             logger.warning(f"Attempt {attempt+1}/{max_retries} failed: {str(e)}")
             if attempt < max_retries - 1:
@@ -104,13 +108,19 @@ def get_embedding(text, file_path):
         context = f"Programming language: {language}\n\n{text}"
         
         # Generate embedding
-        embedding = embed_content(
+        embedding_result = embed_content(
             model="models/embedding-001",
             content=context,
             task_type="retrieval_document"
         )
         
-        return embedding.values
+        # Make sure we're getting a list, not a method
+        if hasattr(embedding_result, 'values') and callable(embedding_result.values):
+            return embedding_result.values()  # Call the method if it's callable
+        elif hasattr(embedding_result, 'values'):
+            return embedding_result.values  # Use the property if it's not callable
+        else:
+            return embedding_result  # Return the result directly if no values attribute
     except Exception as e:
         logger.error(f"Failed to generate embedding: {str(e)}")
         return None

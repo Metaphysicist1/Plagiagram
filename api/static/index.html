@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Plagiarism Detector</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .input-section, .result-section {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        select, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        textarea {
+            min-height: 300px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .result {
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .plagiarized {
+            background-color: #ffecec;
+            border-left: 4px solid #e74c3c;
+        }
+        .not-plagiarized {
+            background-color: #e7ffe7;
+            border-left: 4px solid #2ecc71;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>Code Plagiarism Detector</h1>
+    
+    <div class="container">
+        <div class="input-section">
+            <label for="language">Programming Language:</label>
+            <select id="language">
+                <option value="Python">Python</option>
+                <option value="JavaScript">JavaScript</option>
+                <option value="Java">Java</option>
+                <option value="C++">C++</option>
+                <option value="Go">Go</option>
+                <option value="HTML">HTML</option>
+                <option value="CSS">CSS</option>
+                <option value="PHP">PHP</option>
+                <option value="Ruby">Ruby</option>
+                <option value="TypeScript">TypeScript</option>
+            </select>
+            
+            <label for="code">Paste your code here:</label>
+            <textarea id="code" placeholder="// Paste your code here to check for plagiarism"></textarea>
+            
+            <button id="check-btn">Check for Plagiarism</button>
+        </div>
+        
+        <div class="result-section">
+            <h2>Results</h2>
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Analyzing code...</p>
+            </div>
+            <div id="result-container">
+                <p>Results will appear here after analysis.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('check-btn').addEventListener('click', async function() {
+            const code = document.getElementById('code').value;
+            const language = document.getElementById('language').value;
+            const resultContainer = document.getElementById('result-container');
+            const loading = document.querySelector('.loading');
+            
+            if (!code.trim()) {
+                resultContainer.innerHTML = '<p>Please enter some code to analyze.</p>';
+                return;
+            }
+            
+            // Show loading spinner
+            resultContainer.style.display = 'none';
+            loading.style.display = 'block';
+            
+            try {
+                const response = await fetch('/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ code, language })
+                });
+                
+                const result = await response.json();
+                
+                // Hide loading spinner
+                loading.style.display = 'none';
+                resultContainer.style.display = 'block';
+                
+                // Display result
+                const resultClass = result.is_plagiarized ? 'plagiarized' : 'not-plagiarized';
+                const verdict = result.is_plagiarized ? 'Plagiarism Detected' : 'No Plagiarism Detected';
+                
+                resultContainer.innerHTML = `
+                    <div class="result ${resultClass}">
+                        <h3>${verdict}</h3>
+                        <p>${result.explanation}</p>
+                    </div>
+                `;
+            } catch (error) {
+                loading.style.display = 'none';
+                resultContainer.style.display = 'block';
+                resultContainer.innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 import sys
 sys.path.append('/app')
@@ -15,10 +15,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 
 # Initialize plagiarism detector
 detector = PlagiarismDetector()
+
+@app.route('/', methods=['GET'])
+def index():
+    """Serve the main HTML page."""
+    return send_from_directory(app.static_folder, 'index.html')
 
 @app.route('/health', methods=['GET'])
 def health_check():
