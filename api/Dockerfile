@@ -11,4 +11,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 5000
 
 # The file is at /app/api/app.py, but we're already in /app
-CMD ["python", "api/app.py"] 
+CMD ["python", "app.py"] 

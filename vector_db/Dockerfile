@@ -12,4 +12,4 @@ COPY . /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 # The file is at /app/vector_db/vectorize.py, but we're already in /app
-CMD ["python", "vector_db/vectorize.py"] 
+CMD ["python", "vectorize.py"] 
