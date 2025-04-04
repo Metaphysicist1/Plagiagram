@@ -2,13 +2,16 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install required dependencies
+RUN pip install --no-cache-dir \
+    flask==2.0.1 \
+    werkzeug==2.0.1 \
+    python-dotenv \
+    pinecone \
+    google-generativeai
 
 COPY . .
 
-
 EXPOSE 5000
 
-# Add the CMD instruction to run the Flask app
-CMD ["python", "api/app.py"]
+CMD ["python", "api/app.py"] 

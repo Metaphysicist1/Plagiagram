@@ -1,9 +1,9 @@
 import os
-import pinecone
 import logging
 from dotenv import load_dotenv
 import google.generativeai as genai
 from google.generativeai import GenerativeModel, embed_content
+from pinecone import Pinecone  # Updated import
 
 # Load environment variables
 load_dotenv()
@@ -25,9 +25,9 @@ genai.configure(api_key=GEMINI_API_KEY)
 class PlagiarismDetector:
     def __init__(self):
         """Initialize the plagiarism detector."""
-        # Initialize Pinecone
-        pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-        self.index = pinecone.Index(PINECONE_INDEX_NAME)
+        # Initialize Pinecone with the new API
+        self.pc = Pinecone(api_key=PINECONE_API_KEY)
+        self.index = self.pc.Index(PINECONE_INDEX_NAME)
         
         # Initialize Gemini model
         self.model = GenerativeModel(model_name="gemini-1.5-pro")
@@ -55,6 +55,7 @@ class PlagiarismDetector:
     def search_similar_code(self, embedding, top_k=5):
         """Search for similar code in the vector database."""
         try:
+            # Updated query method for new Pinecone API
             results = self.index.query(
                 vector=embedding,
                 top_k=top_k,

@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-REPOS_CONFIG_PATH = "repositories.json"
+REPOS_CONFIG_PATH = "data_ingestion/repositories.json"
 REPOS_STORAGE_PATH = "/data/repositories"
 GIT_EXECUTABLE = "/usr/bin/git"  # Default path
 
