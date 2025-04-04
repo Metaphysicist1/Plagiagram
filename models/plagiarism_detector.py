@@ -1,9 +1,9 @@
 import os
 import logging
 from dotenv import load_dotenv
-import google.generativeai as genai
-from google.generativeai import GenerativeModel, embed_content
-from pinecone import Pinecone  # Updated import
+from pinecone import Pinecone
+from sentence_transformers import SentenceTransformer
+import google.generativeai as genai  # For Gemini
 
 # Load environment variables
 load_dotenv()
@@ -12,132 +12,133 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-SIMILARITY_THRESHOLD = 0.85  # Threshold for plagiarism detection
-
-# Initialize Gemini
-genai.configure(api_key=GEMINI_API_KEY)
-
 class PlagiarismDetector:
     def __init__(self):
         """Initialize the plagiarism detector."""
-        # Initialize Pinecone with the new API
-        self.pc = Pinecone(api_key=PINECONE_API_KEY)
-        self.index = self.pc.Index(PINECONE_INDEX_NAME)
+        self.pinecone_api_key = os.getenv("PINECONE_API_KEY")
+        self.pinecone_index_name = os.getenv("PINECONE_INDEX_NAME")
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        self.embedding_model = "all-MiniLM-L6-v2"
         
-        # Initialize Gemini model
-        self.model = GenerativeModel(model_name="gemini-1.5-pro")
+        # Initialize Pinecone
+        self.pc = Pinecone(api_key=self.pinecone_api_key)
+        self.index = self.pc.Index(self.pinecone_index_name)
+        
+        # Initialize embedding model
+        self.model = SentenceTransformer(self.embedding_model)
+        
+        # Initialize Gemini for explanations
+        genai.configure(api_key=self.gemini_api_key)
+        self.llm = genai.GenerativeModel('gemini-pro')
         
         logger.info("Plagiarism detector initialized")
     
-    def get_embedding(self, code, language="Unknown"):
-        """Get embedding for code using Gemini API."""
-        try:
-            # Create context for embedding
-            context = f"Programming language: {language}\n\n{code}"
-            
-            # Generate embedding
-            embedding = embed_content(
-                model="models/embedding-001",
-                content=context,
-                task_type="retrieval_document"
-            )
-            
-            return embedding.values
-        except Exception as e:
-            logger.error(f"Failed to generate embedding: {str(e)}")
-            return None
+    def get_embedding(self, code, language):
+        """Get embedding for code."""
+        context = f"Programming language: {language}\n\n{code}"
+        embedding = self.model.encode(context)
+        return embedding.tolist()
     
-    def search_similar_code(self, embedding, top_k=5):
-        """Search for similar code in the vector database."""
+    def generate_explanation(self, query_code, matched_code, language, similarity_score):
+        """Generate a detailed explanation using Gemini."""
         try:
-            # Updated query method for new Pinecone API
-            results = self.index.query(
-                vector=embedding,
-                top_k=top_k,
-                include_metadata=True
-            )
-            return results
-        except Exception as e:
-            logger.error(f"Failed to search similar code: {str(e)}")
-            return None
-    
-    def analyze_with_gemini(self, user_code, similar_results):
-        """Use Gemini to analyze if the code is plagiarized."""
-        if not similar_results or not similar_results.matches:
-            return {"is_plagiarized": False, "explanation": "No similar code found in the database."}
-        
-        # Prepare prompt for Gemini
-        prompt = f"""
-        I need to determine if the following code is plagiarized from existing repositories.
-
-        USER CODE:
-        ```
-        {user_code}
-        ```
-
-        POTENTIAL MATCHES:
-        """
-        
-        for i, match in enumerate(similar_results.matches[:3]):  # Use top 3 matches
-            similarity = match.score
-            repo = match.metadata.get("repo", "Unknown")
-            path = match.metadata.get("path", "Unknown")
-            content = match.metadata.get("content", "")
+            prompt = f"""
+            I need to analyze two code snippets for plagiarism.
             
-            prompt += f"""
-            MATCH {i+1} (Similarity: {similarity:.2f}):
-            Repository: {repo}
-            Path: {path}
-            Code snippet:
+            QUERY CODE ({language}):
+            ```{language}
+            {query_code}
             ```
-            {content}
+            
+            MATCHED CODE ({language}):
+            ```{language}
+            {matched_code}
             ```
+            
+            The similarity score between these snippets is {similarity_score:.2f} (on a scale from 0 to 1).
+            
+            Please provide:
+            1. An analysis of whether this is likely plagiarism
+            2. Specific similarities between the code snippets
+            3. Any notable differences
+            4. If it appears to be plagiarism, suggestions for how the code could be modified to be more original
+            
+            Format your response as a JSON object with the following fields:
+            {
+                "is_plagiarized": true/false,
+                "explanation": "detailed explanation",
+                "similarities": ["list", "of", "similarities"],
+                "differences": ["list", "of", "differences"],
+                "suggestions": ["list", "of", "suggestions"]
+            }
             """
-        
-        prompt += """
-        Based on the code comparison, determine if the user code is plagiarized from any of the matches.
-        Consider:
-        1. Code structure and logic similarities
-        2. Variable/function naming patterns
-        3. Comments and documentation
-        4. Common programming patterns vs. direct copying
-        
-        Respond with a JSON object with two fields:
-        - "is_plagiarized": true or false
-        - "explanation": brief explanation of your decision
-        
-        Only respond with the JSON object, nothing else.
-        """
-        
-        try:
-            response = self.model.generate_content(prompt)
+            
+            response = self.llm.generate_content(prompt)
             return response.text
         except Exception as e:
-            logger.error(f"Failed to analyze with Gemini: {str(e)}")
-            return {"is_plagiarized": False, "explanation": f"Error analyzing code: {str(e)}"}
+            logger.error(f"Error generating explanation: {str(e)}")
+            return None
     
-    def detect_plagiarism(self, code, language="Unknown"):
-        """Detect if the provided code is plagiarized."""
-        # Get embedding for the code
-        embedding = self.get_embedding(code, language)
-        if not embedding:
-            return {"is_plagiarized": False, "explanation": "Failed to process code."}
-        
-        # Search for similar code
-        similar_results = self.search_similar_code(embedding)
-        if not similar_results:
-            return {"is_plagiarized": False, "explanation": "Failed to search for similar code."}
-        
-        # Check if any result exceeds the similarity threshold
-        has_high_similarity = any(match.score > SIMILARITY_THRESHOLD for match in similar_results.matches)
-        
-        # If high similarity found, analyze with Gemini for detailed check
-        if has_high_similarity or len(similar_results.matches) > 0:
-            return self.analyze_with_gemini(code, similar_results)
-        
-        return {"is_plagiarized": False, "explanation": "No significant similarity found."} 
+    def detect_plagiarism(self, code, language):
+        """Detect plagiarism in code."""
+        try:
+            # Get embedding for the code
+            embedding = self.get_embedding(code, language)
+            
+            # Query Pinecone
+            results = self.index.query(
+                vector=embedding,
+                top_k=5,
+                include_metadata=True
+            )
+            
+            # Check if there are any matches
+            if not results.matches:
+                return {
+                    "is_plagiarized": False,
+                    "explanation": "No similar code found in our database."
+                }
+            
+            # Check similarity scores
+            top_match = results.matches[0]
+            similarity_score = top_match.score
+            
+            # Determine if it's plagiarized based on similarity score
+            threshold = 0.95  # Adjust this threshold as needed
+            is_plagiarized = similarity_score > threshold
+            
+            # Basic explanation
+            if is_plagiarized:
+                repo = top_match.metadata.get("repo", "unknown")
+                path = top_match.metadata.get("path", "unknown")
+                basic_explanation = f"This code is very similar to code found in {repo}/{path} with a similarity score of {similarity_score:.2f}."
+            else:
+                basic_explanation = f"This code has some similarities to existing code, but the similarity score ({similarity_score:.2f}) is below our plagiarism threshold."
+            
+            # Get detailed explanation from LLM if similarity is high enough
+            detailed_explanation = None
+            if similarity_score > 0.8:  # Only use LLM for significant matches
+                matched_code = top_match.metadata.get("content", "")
+                detailed_explanation = self.generate_explanation(
+                    code, matched_code, language, similarity_score
+                )
+            
+            return {
+                "is_plagiarized": is_plagiarized,
+                "explanation": basic_explanation,
+                "detailed_analysis": detailed_explanation,
+                "matches": [
+                    {
+                        "repo": match.metadata.get("repo", "unknown"),
+                        "path": match.metadata.get("path", "unknown"),
+                        "score": match.score,
+                        "snippet": match.metadata.get("content", "")
+                    } for match in results.matches
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Error detecting plagiarism: {str(e)}")
+            return {
+                "is_plagiarized": False,
+                "explanation": f"Error analyzing code: {str(e)}"
+            } 

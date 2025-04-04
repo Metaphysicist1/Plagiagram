@@ -6,8 +6,10 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     flask==2.0.1 \
     werkzeug==2.0.1 \
-    python-dotenv \
+    dotenv \
     pinecone \
+    sentence-transformers \
+    torch \
     google-generativeai
 
 COPY . .

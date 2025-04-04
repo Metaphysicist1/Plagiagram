@@ -64,6 +64,25 @@ def detect_plagiarism():
         logger.error(f"Error processing request: {str(e)}")
         return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
 
+@app.route('/index-stats', methods=['GET'])
+def index_stats():
+    """Get statistics about the Pinecone index."""
+    try:
+        # Get the index from the detector
+        index = detector.index
+        
+        # Get stats
+        stats = index.describe_index_stats()
+        
+        return jsonify({
+            "total_vector_count": stats.total_vector_count,
+            "namespaces": stats.namespaces,
+            "dimension": stats.dimension
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting index stats: {str(e)}")
+        return jsonify({"error": f"Failed to get index stats: {str(e)}"}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 
 
