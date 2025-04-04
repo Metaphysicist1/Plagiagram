@@ -1,0 +1,55 @@
+services:
+  data-ingestion:
+    build:
+      context: . # Use the root directory as build context
+      dockerfile: data_ingestion/Dockerfile
+    volumes:
+      - repo-data:/data/repositories
+    env_file:
+      - .env
+    networks:
+      - plagiarism-network
+    dns:
+      - 8.8.8.8 # Use Google DNS
+      - 8.8.4.4
+
+  vector-db:
+    build:
+      context: . # Use the root directory as build context
+      dockerfile: vector_db/Dockerfile
+    volumes:
+      - repo-data:/data/repositories
+    env_file:
+      - .env
+    depends_on:
+      - data-ingestion
+    networks:
+      - plagiarism-network
+    dns:
+      - 8.8.8.8 # Use Google DNS
+      - 8.8.4.4
+
+  api:
+    build:
+      context: . # Use the root directory as build context
+      dockerfile: api/Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      - ./models:/app/models
+    depends_on:
+      - vector-db
+    networks:
+      - plagiarism-network
+    dns:
+      - 8.8.8.8 # Use Google DNS
+      - 8.8.4.4
+
+volumes:
+  repo-data:
+
+networks:
+  plagiarism-network:
+    driver: bridge

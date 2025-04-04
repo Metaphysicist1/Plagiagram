@@ -1,0 +1,27 @@
+[
+    {
+        "name": "python-examples",
+        "url": "https://github.com/geekcomputers/Python",
+        "language": "Python"
+    },
+    {
+        "name": "javascript-examples",
+        "url": "https://github.com/30-seconds/30-seconds-of-code",
+        "language": "JavaScript"
+    },
+    {
+        "name": "java-examples",
+        "url": "https://github.com/iluwatar/java-design-patterns",
+        "language": "Java"
+    },
+    {
+        "name": "cpp-examples",
+        "url": "https://github.com/TheAlgorithms/C-Plus-Plus",
+        "language": "C++"
+    },
+    {
+        "name": "go-examples",
+        "url": "https://github.com/avelino/awesome-go",
+        "language": "Go"
+    }
+] 
