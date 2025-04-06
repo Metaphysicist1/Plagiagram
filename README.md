@@ -133,9 +133,7 @@ This is a proof-of-concept system with the following limitations:
 4. Push to the branch
 5. Create a Pull Request
 
-## License
 
-[Your chosen license]
 
 ## Acknowledgments
 
