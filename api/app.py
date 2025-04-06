@@ -1,10 +1,17 @@
 import os
-import json
 import logging
-from flask import Flask, request, jsonify, send_from_directory
+from pathlib import Path
+from typing import Optional, Dict, Any
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, FileResponse
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
+
+# Add app directory to Python path
 sys.path.append('/app')
+
 from models.plagiarism_detector import PlagiarismDetector
 
 # Load environment variables
@@ -14,53 +21,77 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
-app = Flask(__name__, static_folder='static')
+# Initialize FastAPI app
+app = FastAPI(
+    title="Code Plagiarism Detector API",
+    description="API for detecting code plagiarism using vector similarity and LLM analysis",
+    version="1.0.0"
+)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="api/static"), name="static")
 
 # Initialize plagiarism detector
 detector = PlagiarismDetector()
 
-@app.route('/', methods=['GET'])
-def index():
+class CodeSubmission(BaseModel):
+    """Pydantic model for code submission."""
+    code: str
+    language: str = "Unknown"
+    file_name: Optional[str] = None
+
+class PlagiarismResponse(BaseModel):
+    """Pydantic model for plagiarism detection response."""
+    is_plagiarized: bool
+    explanation: str
+    detailed_analysis: Optional[str] = None
+    matches: Optional[list] = None
+    evaluation_file: Optional[str] = None
+    error: Optional[str] = None
+
+@app.get("/")
+async def index():
     """Serve the main HTML page."""
-    return send_from_directory(app.static_folder, 'index.html')
+    return FileResponse("api/static/index.html")
 
-
-
-@app.route('/detect', methods=['POST'])
-def detect_plagiarism():
-    """Endpoint to detect plagiarism in code."""
+@app.post("/detect", response_model=PlagiarismResponse)
+async def detect_plagiarism(submission: CodeSubmission):
+    """
+    Detect plagiarism in submitted code.
+    
+    Args:
+        submission: CodeSubmission object containing code and language
+        
+    Returns:
+        PlagiarismResponse object with detection results
+    """
     try:
-        # Get request data
-        data = request.json
-        
-        if not data or 'code' not in data:
-            return jsonify({"error": "Missing 'code' field in request"}), 400
-        
-        code = data['code']
-        language = data.get('language', 'Unknown')
+        # Get code and language from submission
+        code = submission.code
+        language = submission.language
+        file_name = submission.file_name or "unknown_file"
         
         # Detect plagiarism
-        result = detector.detect_plagiarism(code, language)
+        result = detector.detect_plagiarism(
+            code_vector=code,  # Note: This should be pre-computed vector in production
+            language=language,
+            code=code,
+            query_file=file_name
+        )
         
-        # Parse result if it's a string 
-        if isinstance(result, str):
-            try:
-                result = json.loads(result)
-            except json.JSONDecodeError:
-                # If parsing fails, return a simplified result
-                is_plagiarized = "true" in result.lower() and "is_plagiarized" in result.lower()
-                result = {
-                    "is_plagiarized": is_plagiarized,
-                    "explanation": "Analysis completed, but result format was unexpected."
-                }
-        
-        return jsonify(result), 200
+        return result
     
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
-        return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process request: {str(e)}"
+        )
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 

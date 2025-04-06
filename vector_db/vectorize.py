@@ -22,8 +22,8 @@ REPOS_STORAGE_PATH = "/data/repositories"
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 BATCH_SIZE = 100
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-EMBEDDING_DIMENSION = 384
+EMBEDDING_MODEL = "llama-text-embed-v2"  # Updated to match Pinecone's model
+EMBEDDING_DIMENSION = 1024  # Updated to match Pinecone's dimension
 MODEL_LOAD_TIMEOUT = 300  # 5 minutes timeout
 
 # File extensions to process
@@ -106,7 +106,7 @@ def get_embedding(text, file_path, model):
         return None
 
 def initialize_pinecone():
-    """Initialize Pinecone client and ensure index exists."""
+    """Initialize Pinecone client and ensure index exists with correct dimensions."""
     try:
         # Initialize Pinecone
         pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -115,22 +115,24 @@ def initialize_pinecone():
         indexes = pc.list_indexes()
         index_exists = PINECONE_INDEX_NAME in [index.name for index in indexes.indexes]
         
-        # Create index if it doesn't exist
-        if not index_exists:
-            pc.create_index(
-                name=PINECONE_INDEX_NAME,
-                dimension=EMBEDDING_DIMENSION,
-                metric="cosine"
-            )
-            logger.info(f"Created new Pinecone index: {PINECONE_INDEX_NAME}")
+        # Delete existing index if it exists
+        if index_exists:
+            logger.info(f"Deleting existing index: {PINECONE_INDEX_NAME}")
+            pc.delete_index(PINECONE_INDEX_NAME)
+            # Wait for deletion to complete
+            time.sleep(60)  # Pinecone needs time to delete the index
+        
+        # Create new index with correct dimensions
+        logger.info(f"Creating new Pinecone index: {PINECONE_INDEX_NAME} with dimension {EMBEDDING_DIMENSION}")
+        pc.create_index(
+            name=PINECONE_INDEX_NAME,
+            dimension=EMBEDDING_DIMENSION,
+            metric="cosine"
+        )
         
         # Get the index
         index = pc.Index(PINECONE_INDEX_NAME)
         logger.info("Successfully connected to Pinecone")
-        
-        # Check existing vectors
-        stats = index.describe_index_stats()
-        logger.info(f"Found {stats.total_vector_count} existing vectors in Pinecone index")
         
         return index
     except Exception as e:
@@ -230,6 +232,7 @@ def process_files_batch(file_paths, index, model):
             logger.info(f"Uploaded {len(batch)} vectors to Pinecone (successful: {successful}, failed: {failed})")
         except Exception as e:
             logger.error(f"Failed to upload batch to Pinecone: {str(e)}")
+            raise
     else:
         logger.warning("No vectors to upload in this batch")
 
