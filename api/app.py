@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import sys
+from pinecone import Pinecone, ServerlessSpec
 
 # Add app directory to Python path
 sys.path.append('/app')
@@ -31,8 +32,44 @@ app = FastAPI(
 # Mount static files
 app.mount("/static", StaticFiles(directory="api/static"), name="static")
 
-# Initialize plagiarism detector
-detector = PlagiarismDetector()
+# Initialize Pinecone client
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
+
+def ensure_pinecone_index():
+    """Ensure Pinecone index exists, create if it doesn't."""
+    try:
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        
+        # Check if index exists
+        indexes = pc.list_indexes()
+        if PINECONE_INDEX_NAME not in [index.name for index in indexes.indexes]:
+            logger.info(f"Creating new Pinecone index: {PINECONE_INDEX_NAME}")
+            spec = ServerlessSpec(
+                cloud="aws",
+                region="us-west-2"
+            )
+            
+            pc.create_index(
+                name=PINECONE_INDEX_NAME,
+                dimension=1024,  # Match the dimension used in vectorize.py
+                metric="cosine",
+                spec=spec
+            )
+            logger.info("Pinecone index created successfully")
+        
+        return pc.Index(PINECONE_INDEX_NAME)
+    except Exception as e:
+        logger.error(f"Failed to initialize Pinecone: {str(e)}")
+        raise
+
+# Initialize plagiarism detector with Pinecone index
+try:
+    index = ensure_pinecone_index()
+    detector = PlagiarismDetector()
+except Exception as e:
+    logger.error(f"Failed to initialize plagiarism detector: {str(e)}")
+    detector = None
 
 class CodeSubmission(BaseModel):
     """Pydantic model for code submission."""
@@ -65,6 +102,12 @@ async def detect_plagiarism(submission: CodeSubmission):
     Returns:
         PlagiarismResponse object with detection results
     """
+    if detector is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Plagiarism detection service is not available"
+        )
+    
     try:
         # Get code and language from submission
         code = submission.code
@@ -91,10 +134,13 @@ async def detect_plagiarism(submission: CodeSubmission):
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
+    if detector is None:
+        return {"status": "unhealthy", "message": "Plagiarism detector not initialized"}
     return {"status": "healthy"}
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 
+    import uvicorn
+    uvicorn.run(app, host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 
 
 
     

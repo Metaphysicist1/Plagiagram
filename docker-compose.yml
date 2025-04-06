@@ -1,10 +1,12 @@
+version: "3.8"
+
 services:
   data-ingestion:
     build:
       context: . # Use the root directory as build context
       dockerfile: data_ingestion/Dockerfile
     volumes:
-      - repo-data:/data/repositories
+      - ./data:/data
     env_file:
       - .env
     networks:
@@ -12,17 +14,32 @@ services:
     dns:
       - 8.8.8.8 # Use Google DNS
       - 8.8.4.4
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+    depends_on:
+      vector-db:
+        condition: service_healthy
 
   vector-db:
     build:
       context: . # Use the root directory as build context
       dockerfile: vector_db/Dockerfile
     volumes:
-      - repo-data:/data/repositories
+      - ./data:/data
     env_file:
       - .env
-    depends_on:
-      - data-ingestion
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from pinecone import Pinecone; import os; pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY')); pc.list_indexes()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - plagiarism-network
     dns:
@@ -51,9 +68,15 @@ services:
       - .env
     volumes:
       - ./models:/app/models
+    environment:
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     depends_on:
-      - vector-db
-      - models
+      vector-db:
+        condition: service_healthy
+      data-ingestion:
+        condition: service_completed_successfully
     networks:
       - plagiarism-network
     dns:
