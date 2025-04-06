@@ -25,10 +25,7 @@ def index():
     """Serve the main HTML page."""
     return send_from_directory(app.static_folder, 'index.html')
 
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Health check endpoint."""
-    return jsonify({"status": "healthy"}), 200
+
 
 @app.route('/detect', methods=['POST'])
 def detect_plagiarism():
@@ -46,7 +43,7 @@ def detect_plagiarism():
         # Detect plagiarism
         result = detector.detect_plagiarism(code, language)
         
-        # Parse result if it's a string (JSON from Gemini)
+        # Parse result if it's a string 
         if isinstance(result, str):
             try:
                 result = json.loads(result)
@@ -64,24 +61,6 @@ def detect_plagiarism():
         logger.error(f"Error processing request: {str(e)}")
         return jsonify({"error": f"Failed to process request: {str(e)}"}), 500
 
-@app.route('/index-stats', methods=['GET'])
-def index_stats():
-    """Get statistics about the Pinecone index."""
-    try:
-        # Get the index from the detector
-        index = detector.index
-        
-        # Get stats
-        stats = index.describe_index_stats()
-        
-        return jsonify({
-            "total_vector_count": stats.total_vector_count,
-            "namespaces": stats.namespaces,
-            "dimension": stats.dimension
-        }), 200
-    except Exception as e:
-        logger.error(f"Error getting index stats: {str(e)}")
-        return jsonify({"error": f"Failed to get index stats: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 

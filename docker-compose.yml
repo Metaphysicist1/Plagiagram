@@ -29,6 +29,18 @@ services:
       - 8.8.8.8 # Use Google DNS
       - 8.8.4.4
 
+  models:
+    build:
+      context: .
+      dockerfile: models/Dockerfile
+    env_file:
+      - .env
+    networks:
+      - plagiarism-network
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
   api:
     build:
       context: . # Use the root directory as build context
@@ -41,6 +53,7 @@ services:
       - ./models:/app/models
     depends_on:
       - vector-db
+      - models
     networks:
       - plagiarism-network
     dns:

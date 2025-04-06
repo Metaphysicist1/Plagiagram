@@ -7,6 +7,8 @@ import time
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 import numpy as np
+import torch
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 # Load environment variables
 load_dotenv()
@@ -15,18 +17,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
+# Constants
 REPOS_STORAGE_PATH = "/data/repositories"
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 BATCH_SIZE = 100
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # A small, fast model with 384 dimensions
-EMBEDDING_DIMENSION = 384  # Dimension of the model above
-
-# Initialize the embedding model
-logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
-model = SentenceTransformer(EMBEDDING_MODEL)
-logger.info("Embedding model loaded successfully")
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_DIMENSION = 384
+MODEL_LOAD_TIMEOUT = 300  # 5 minutes timeout
 
 # File extensions to process
 CODE_EXTENSIONS = {
@@ -42,6 +40,70 @@ CODE_EXTENSIONS = {
     ".rb": "Ruby",
     ".ts": "TypeScript"
 }
+
+def load_model_with_timeout():
+    """Load the model with a timeout and GPU support."""
+    try:
+        # Check for GPU availability
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info(f"Using device: {device}")
+        
+        # Load model in a separate thread with timeout
+        with ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                SentenceTransformer,
+                EMBEDDING_MODEL,
+                device=device
+            )
+            
+            try:
+                model = future.result(timeout=MODEL_LOAD_TIMEOUT)
+                logger.info(f"Successfully loaded model on {device}")
+                return model
+            except TimeoutError:
+                logger.error("Model loading timed out")
+                raise
+            except Exception as e:
+                logger.error(f"Error loading model: {str(e)}")
+                raise
+                
+    except Exception as e:
+        logger.error(f"Failed to initialize model: {str(e)}")
+        raise
+
+def get_embedding(text, file_path, model):
+    """Get embedding for text using Hugging Face model."""
+    try:
+        # Get file extension and language
+        ext = os.path.splitext(file_path)[1]
+        language = CODE_EXTENSIONS.get(ext, "Unknown")
+        
+        # Truncate text if it's too long
+        max_chars = 8000
+        if len(text) > max_chars:
+            text = text[:max_chars]
+        
+        # Create context for embedding
+        context = f"Programming language: {language}\n\n{text}"
+        
+        # Generate embedding
+        embedding = model.encode(context)
+        
+        # Ensure we have a numpy array of floats
+        embedding = embedding.astype(np.float32)
+        
+        # Convert to list of floats
+        embedding_list = embedding.tolist()
+        
+        # Verify all values are floats
+        if not all(isinstance(x, float) for x in embedding_list):
+            logger.error("Could not convert all values to floats")
+            return None
+            
+        return embedding_list
+    except Exception as e:
+        logger.error(f"Failed to generate embedding: {str(e)}")
+        return None
 
 def initialize_pinecone():
     """Initialize Pinecone client and ensure index exists."""
@@ -95,33 +157,7 @@ def read_file_content(file_path):
         logger.error(f"Failed to read file {file_path}: {str(e)}")
         return None
 
-def get_embedding(text, file_path):
-    """Get embedding for text using Hugging Face model."""
-    try:
-        # Get file extension and language
-        ext = os.path.splitext(file_path)[1]
-        language = CODE_EXTENSIONS.get(ext, "Unknown")
-        
-        # Truncate text if it's too long
-        max_chars = 8000
-        if len(text) > max_chars:
-            text = text[:max_chars]
-        
-        # Create context for embedding
-        context = f"Programming language: {language}\n\n{text}"
-        
-        # Generate embedding
-        embedding = model.encode(context)
-        
-        # Convert to list of floats
-        embedding_list = embedding.tolist()
-        
-        return embedding_list
-    except Exception as e:
-        logger.error(f"Failed to generate embedding: {str(e)}")
-        return None
-
-def test_embedding():
+def test_embedding(model):
     """Test the embedding function with a simple example."""
     test_code = """
 def hello_world():
@@ -129,7 +165,7 @@ def hello_world():
     """
     
     logger.info("Testing embedding function...")
-    embedding = get_embedding(test_code, "test.py")
+    embedding = get_embedding(test_code, "test.py", model)
     
     if embedding is not None:
         logger.info(f"Embedding type: {type(embedding)}")
@@ -145,7 +181,7 @@ def hello_world():
         logger.error("Failed to generate test embedding")
         return False
 
-def process_files_batch(file_paths, index):
+def process_files_batch(file_paths, index, model):
     """Process a batch of files and upload to Pinecone."""
     batch = []
     successful = 0
@@ -164,7 +200,7 @@ def process_files_batch(file_paths, index):
             repo_name = rel_path.split(os.path.sep)[0]
             
             # Get embedding
-            embedding = get_embedding(content, file_path)
+            embedding = get_embedding(content, file_path, model)
             if not embedding:
                 logger.debug(f"Skipping file (no embedding): {file_path}")
                 failed += 1
@@ -199,25 +235,34 @@ def process_files_batch(file_paths, index):
 
 def main():
     """Main function to vectorize code repositories."""
-    # Initialize Pinecone
-    index = initialize_pinecone()
-    
-    # Test embedding function first
-    if not test_embedding():
-        logger.error("Embedding test failed. Exiting.")
-        return
-    
-    # Get all file paths
-    file_paths = get_file_paths()
-    
-    # Process files in batches
-    total_batches = (len(file_paths) - 1) // BATCH_SIZE + 1
-    for i in range(0, len(file_paths), BATCH_SIZE):
-        batch_paths = file_paths[i:i+BATCH_SIZE]
-        logger.info(f"Processing batch {i//BATCH_SIZE + 1}/{total_batches} ({len(batch_paths)} files)")
-        process_files_batch(batch_paths, index)
+    try:
+        # Initialize Pinecone
+        index = initialize_pinecone()
         
-    logger.info("Finished processing all files")
+        # Load model with timeout
+        logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
+        model = load_model_with_timeout()
+        
+        # Test embedding function first
+        if not test_embedding(model):
+            logger.error("Embedding test failed. Exiting.")
+            return
+        
+        # Get all file paths
+        file_paths = get_file_paths()
+        
+        # Process files in batches
+        total_batches = (len(file_paths) - 1) // BATCH_SIZE + 1
+        for i in range(0, len(file_paths), BATCH_SIZE):
+            batch_paths = file_paths[i:i+BATCH_SIZE]
+            logger.info(f"Processing batch {i//BATCH_SIZE + 1}/{total_batches} ({len(batch_paths)} files)")
+            process_files_batch(batch_paths, index, model)
+            
+        logger.info("Finished processing all files")
+        
+    except Exception as e:
+        logger.error(f"Fatal error in main: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     main() 

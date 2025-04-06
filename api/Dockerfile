@@ -4,16 +4,17 @@ WORKDIR /app
 
 # Install required dependencies
 RUN pip install --no-cache-dir \
-    flask==2.0.1 \
-    werkzeug==2.0.1 \
-    dotenv \
-    pinecone \
-    sentence-transformers \
-    torch \
-    google-generativeai
+    flask>=3.0.0 \
+    werkzeug>=3.0.0 \
+    python-dotenv>=1.0.0 \
+    pinecone>=3.0.0 \
+    sentence-transformers>=2.5.0 \
+    torch>=2.2.0 \
+    transformers>=4.37.0 \
+    google-generativeai>=0.3.0
 
 COPY . .
 
 EXPOSE 5000
 
-CMD ["python", "api/app.py"] 
+CMD ["python", "api/app.py"]    

@@ -1,4 +1,0 @@
-flask==2.0.1
-python-dotenv==0.19.0
-google-generativeai==0.3.0
-pinecone>=3.0.0

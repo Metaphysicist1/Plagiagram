@@ -1,0 +1,9 @@
+flask>=3.0.0
+werkzeug>=3.0.0
+python-dotenv>=1.0.0
+pinecone>=3.0.0
+sentence-transformers>=2.5.0
+numpy>=1.24.0
+torch>=2.2.0
+google-generativeai>=0.3.0
+transformers>=4.37.0
